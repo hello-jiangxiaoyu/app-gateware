@@ -10,12 +10,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8888:8888"
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - /usr/local/openresty/configuration:/usr/local/openresty/configuration
-    env_file:
-      - app-gateway.env
     networks:
       - gw
   consul1: 
@@ -31,5 +27,3 @@ services:
 networks:
   gw:
     driver: host
-  consul: 
-    driver: driver
