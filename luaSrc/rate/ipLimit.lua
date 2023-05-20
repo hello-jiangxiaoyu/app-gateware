@@ -6,7 +6,7 @@ local limit_count = require "resty.limit.count"
 local newLimit = limit_count.new
 
 function _M.limit()
-    local lim, err = newLimit("s_ip_limit", 100, 10)  -- 限流规则: 每秒3次
+    local lim, err = newLimit("s_ip_limit", 500, 10)  -- 限流规则: 每秒3次
     if not lim then
         ngx.log(ngx.ERR, "new limit err: ", err)
         return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
