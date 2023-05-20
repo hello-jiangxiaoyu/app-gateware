@@ -1,0 +1,39 @@
+
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: netshoot
+  name: netshoot
+spec:
+  selector:
+    app: netshoot
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: netshoot
+  name: netshoot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: netshoot
+  template:
+    metadata:
+      labels:
+        app: netshoot
+    spec:
+      containers:
+        - image: nicolaka/netshoot
+          name: netshoot
+          resources:
+            limits:
+              cpu: "64m"
+              memory: 512Mi
+            requests:
+              cpu: 6m
+              memory: 8Mi
+
