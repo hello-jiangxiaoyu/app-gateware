@@ -47,11 +47,8 @@ spec:
               value: gitea
           resources:
             limits:
-              cpu: "64m"
+              cpu: "4"
               memory: 512Mi
-            requests:
-              cpu: 6m
-              memory: 8Mi
       volumes:
         - name: timezone
           hostPath:

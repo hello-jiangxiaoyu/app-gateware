@@ -51,11 +51,8 @@ spec:
               value: "postgres"
           resources:
             limits:
-              cpu: "64m"
+              cpu: "2"
               memory: 512Mi
-            requests:
-              cpu: 6m
-              memory: 8Mi
       volumes:
         - name: timezone
           hostPath:

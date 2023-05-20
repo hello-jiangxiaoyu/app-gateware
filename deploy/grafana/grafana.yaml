@@ -36,8 +36,6 @@ spec:
             - name: timezone
               mountPath: /etc/localtime
               readOnly: true
-            - name: ini
-              mountPath: /usr/share/grafana/conf/defaults.ini
           resources:
             limits:
               cpu: "64m"
@@ -49,6 +47,3 @@ spec:
         - name: timezone
           hostPath:
             path: /etc/localtime
-        - name: ini
-          hostPath:
-            path: /root/data/grafana/defaults.ini

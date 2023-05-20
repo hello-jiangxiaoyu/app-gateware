@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: consul
+  name: consul
+spec:
+  ports:
+    - port: 8500
+  selector:
+    app: consul
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: consul
+  name: consul
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: consul
+  template:
+    metadata:
+      labels:
+        app: consul
+    spec:
+      containers:
+        - image: consul
+          name: consul
+          ports:
+            - containerPort: 8500
+          command: ["consul","agent","-server","-bootstrap","-data-dir","/consul", "-ui","-client","0.0.0.0"]
+          volumeMounts:
+            - name: timezone
+              mountPath: /etc/localtime
+              readOnly: true
+          resources:
+            limits:
+              cpu: "2"
+              memory: 512Mi
+      volumes:
+        - name: timezone
+          hostPath:
+            path: /etc/localtime
