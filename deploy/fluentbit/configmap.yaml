@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  labels:
+    k8s-app: fluent-bit
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         1
+        Log_Level     info
+        Daemon        off
+    @INCLUDE input-kubernetes.conf
+    @INCLUDE output-file.conf
+  input-kubernetes.conf: |
+    [INPUT]
+        Name        tail
+        Path        /home/logs/biz/biz*.log
+        Db          /tmp/biz_log.db
+        Db.sync     Full
+        Tag         biz-${NODE_NAME}
+    [INPUT]
+      Name              tail
+      Tag               kube.*
+      Path              /var/log/containers/*.log
+      Parser            docker
+      DB                /var/log/flb_kube.db
+      Mem_Buf_Limit     5MB
+      Skip_Long_Lines   On
+      Refresh_Interval  10
+  output-file.conf: |
+    [OUTPUT]
+        Name        forward
+        Match       *
+        Host        110.223.1.1
+        Port        24221
