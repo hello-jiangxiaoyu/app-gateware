@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway
+data:
+  CONSUL_ADDR: 10.43.88.57
+
+

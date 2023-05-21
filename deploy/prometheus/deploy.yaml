@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: prometheus
+  name: prometheus
+spec:
+  ports:
+    - port: 9090
+  selector:
+    app: prometheus
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: prometheus
+  name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - image: prom/prometheus
+          name: prometheus
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: timezone
+              mountPath: /etc/localtime
+              readOnly: true
+            - name: conf
+              mountPath: /etc/prometheus/prometheus.yaml
+          resources:
+            limits:
+              cpu: "64m"
+              memory: 512Mi
+            requests:
+              cpu: 6m
+              memory: 8Mi
+      volumes:
+        - name: timezone
+          hostPath:
+            path: /etc/localtime
+        - name: data
+          hostPath:
+            path: /root/data/prometheus/prometheus.yaml

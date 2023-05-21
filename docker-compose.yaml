@@ -2,34 +2,25 @@ version: '3'
 
 services:
   gw_openresty:
-    build:
-      context: ./
-      dockerfile: Dockerfile
-    container_name: app-gateway
-    restart: always
+    image: 
+    container_name: openresty/openresty
     ports:
       - "80:80"
       - "443:443"
-      - "8888:8888"
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - /usr/local/openresty/configuration:/usr/local/openresty/configuration
-    env_file:
-      - app-gateway.env
+      - /usr/local/openresty/bin/openresty:/root/app-gateway
     networks:
-      - gw
-  consul1: 
-    image: consul:latest
-    container_name: consul1
-    restart: always
+      - gateway
+  consul: 
+    image: consul
+    container_name: consul
     network_mode: mynet
     command: agent -server -client=0.0.0.0 -bootstrap-expect=3 -node=consul1 -datacenter=dc1 -ui
     networks:
-      - gw
+      - gateway
 
 
 networks:
-  gw:
+  gateway:
     driver: host
-  consul: 
-    driver: driver

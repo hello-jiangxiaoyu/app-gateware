@@ -6,13 +6,13 @@ local limit_count = require "resty.limit.count"
 local newLimit = limit_count.new
 
 function _M.limit()
-    local lim, err = newLimit("my_limit_count_store", 3, 1)  -- 限流规则: 每秒3次
+    local lim, err = newLimit("s_ip_limit", 200, 20)
     if not lim then
         ngx.log(ngx.ERR, "new limit err: ", err)
         return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
     end
 
-    ngx.header["X-RateLimit-Limit"] = "3"
+    ngx.header["X-RateLimit-Limit"] = "200"
     local ip = ngx.var.binary_remote_addr  -- 客户端二进制形式ip
     local delay, err = lim:incoming(ip, true)
     if not delay then
