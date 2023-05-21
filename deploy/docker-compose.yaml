@@ -1,0 +1,60 @@
+version: '3'
+
+networks:
+  app-gateway:
+    external: true
+
+services:
+  gw_openresty:
+    image: openresty/openresty
+    container_name: gateway
+    networks:
+      - app-gateway
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /root/app-gateway:/usr/local/openresty/nginx/conf
+
+  # ========== monitor =========
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: "prometheus"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /root/data/prometheus:/prometheus
+      - /root/app-gateway/deploy/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml
+    networks:
+      - app-gateway
+  fluent: 
+    image: cr.fluentbit.io/fluent/fluent-bit
+    container_name: fluent
+    command: --config=/data/fluent.yaml
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /root/app-gateway/deploy/fluentbit:/data
+  grafana: 
+    image: grafana/grafana
+    container_name: grafana
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /root/data/grafana:/var/lib/grafana
+    networks:
+      - app-gateway
+
+  # ========== DB ==========
+  consul: 
+    image: consul
+    container_name: consul
+    command: agent -server -client=0.0.0.0 -bootstrap-expect=3 -node=consul1 -datacenter=dc1 -ui
+    networks:
+      - app-gateway
+  timescale: 
+    image: timescale/timescaledb-ha:pg14-latest
+    container_name: timescale
+    network_mode: host
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /root/data/timescale:/var/lib/postgresql
+    environment:
+      - POSTGRES_PASSWORD=timescale
+      - POSTGRES_USER=timescale
+
