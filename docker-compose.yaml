@@ -2,25 +2,13 @@ version: '3'
 
 services:
   gw_openresty:
-    image: 
-    container_name: openresty/openresty
+    image: openresty/openresty
+    container_name: openresty
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - /usr/local/openresty/bin/openresty:/root/app-gateway
-    networks:
-      - gateway
-  consul: 
-    image: consul
-    container_name: consul
-    network_mode: mynet
-    command: agent -server -client=0.0.0.0 -bootstrap-expect=3 -node=consul1 -datacenter=dc1 -ui
-    networks:
-      - gateway
-
-
-networks:
-  gateway:
-    driver: host
+      - /root/app-gateway:/usr/local/openresty/nginx/conf
+      - /data/openresty:/usr/local/openresty/nginx/logs
+    network_mode: host
