@@ -12,15 +12,6 @@ services:
     networks:
       - loki
 
-  promtail:
-    image: grafana/promtail:2.8.0
-    volumes:
-      - /data:/data
-      - /root/app-gateway/deploy/grafana/promtail.yaml:/etc/promtail/promtail.yaml
-    command: -config.file=/etc/promtail/promtail.yaml
-    networks:
-      - loki
-
   grafana:
     environment:
       - GF_PATHS_PROVISIONING=/etc/grafana/provisioning

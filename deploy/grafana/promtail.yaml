@@ -15,4 +15,4 @@ scrape_configs:
       - localhost
     labels:
       job: varlogs
-      __path__: /data/openresty/js.log
+      __path__: /data/openresty/access.log
