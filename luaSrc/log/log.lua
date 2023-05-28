@@ -9,11 +9,10 @@ local ngx_var   = ngx.var
 -- 接口访问日志
 local function getAccessLogTable()
     local accessLog = {}
-    accessLog["msec"]                       = ngx_var.msec
     accessLog["time_iso8601"]               = string.sub(ngx_var.time_iso8601, 0, 19)
     accessLog["status"]                     = ngx_var.status
     accessLog["request_method"]             = ngx_var.request_method
-    accessLog["request_uri"]                = ngx_var.request_uri
+    accessLog["uri"]                        = ngx_var.uri
     accessLog["remote_addr"]                = ngx_var.remote_addr
     accessLog["remote_port"]                = ngx_var.remote_port
     accessLog["server_addr"]                = ngx_var.server_addr
@@ -22,7 +21,7 @@ local function getAccessLogTable()
     accessLog["http_name"]                  = ngx_var.http_name
     accessLog["args"]                       = ngx_var.args
     accessLog["request_length"]             = ngx_var.request_length
-    accessLog["body_bytes_sent"]            = ngx_var.body_bytes_sent or 0
+    accessLog["body_bytes_sent"]            = ngx_var.body_bytes_sent
     accessLog["bytes_sent"]                 = ngx_var.bytes_sent
     accessLog["request_time"]               = ngx_var.request_time
     accessLog["connection_requests"]        = ngx_var.connection_requests

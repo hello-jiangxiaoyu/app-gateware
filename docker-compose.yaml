@@ -9,25 +9,22 @@ services:
       - .:/usr/local/openresty/nginx/conf
       - /data/openresty:/usr/local/openresty/nginx/logs
     network_mode: host
-  consul1: 
+  consul: 
     image: consul
     container_name: consul
     command: ["consul","agent","-server","-bootstrap","-data-dir","/consul","-ui","-client","0.0.0.0"]
-    ports: [8500:8500]
-    network_mode: host
+    # ports: [8500:8500]
+    network_mode: bridge
   clickhouse:
     image: yandex/clickhouse-server
     container_name: clickhouse
-    restart: always
     network_mode: host
-    ports:
-      - "8123:8123"
-      - "9000:9000"
+    # ports: [8123:8123]
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - ./config/docker_related_config.xml:/etc/clickhouse-server/config.d/docker_related_config.xml:rw
-      - ./config/config.xml:/etc/clickhouse-server/config.xml:rw
-      - ./config/users.xml:/etc/clickhouse-server/users.xml:rw
-      - /data/clickhouse/log:/var/log/clickhouse-server
+      - ./deploy/clickhouse/docker_related_config.xml:/etc/clickhouse-server/config.d/docker_related_config.xml:rw
+      - ./deploy/clickhouse/config.xml:/etc/clickhouse-server/config.xml:rw
+      - ./deploy/clickhouse/users.xml:/etc/clickhouse-server/users.xml:rw
       - /data/clickhouse/lib:/var/lib/clickhouse:rw
+      # - /data/clickhouse/log:/var/log/clickhouse-server
 

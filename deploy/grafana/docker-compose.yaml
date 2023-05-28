@@ -8,7 +8,6 @@ services:
   node-exporter: # dashboard: 8919
     image: prom/node-exporter:latest
     container_name: "node"
-    ports: [9100:9100]
     networks: [monitor]
     command:
       - '--path.procfs=/host/proc'
@@ -19,18 +18,6 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: "prometheus"
-    ports: [9090:9090]
-    networks: [monitor]
-    volumes: [./prometheus.yaml:/etc/prometheus/prometheus.yml]
-  grafana:
-    image: grafana/grafana
-    container_name: "grafana"
-    ports: ["3000:3000"]
-    networks: [monitor]
-    volumes: [/data/grafana:/var/lib/grafana]
   cadvisor:
     image: google/cadvisor:latest
     container_name: cadvisor
@@ -43,18 +30,15 @@ services:
       - /var/run:/var/run:rw
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
-  loki:
-    image: grafana/loki
-    container_name: loki
-    ports: [3100:3100]
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: "prometheus"
+    ports: [9090:9090]
     networks: [monitor]
-    command: -config.file=/etc/loki/local-config.yaml
-    volumes: [./loki.yaml:/etc/loki/local-config.yaml]
-  promtail:
-    image: grafana/promtail
-    container_name: promtail
-    command: -config.file=/etc/promtail/promtail.yaml
+    volumes: [./prometheus.yaml:/etc/prometheus/prometheus.yml]
+  grafana:
+    image: grafana/grafana
+    container_name: "grafana"
+    ports: ["3000:3000"]
     networks: [monitor]
-    volumes:
-      - /data/openresty:/data/openresty
-      - ./promtail.yaml:/etc/promtail/promtail.yaml
+    volumes: [/data/grafana:/var/lib/grafana, /etc/localtime:/etc/localtime:ro]

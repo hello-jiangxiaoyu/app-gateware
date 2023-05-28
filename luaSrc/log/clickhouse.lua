@@ -50,8 +50,13 @@ function _M.LogSendTimer(_, istSql)
         body = istSql
 	})
 
-	if resp.status ~= 200 or err ~= nil then
-		ngx.log(ngx.ERR,"log server response===========", resp.status, resp.body);
+    if err ~= nil or resp == nil then
+        ngx.log(ngx.ERR, "===log request err: ", err)
+        return
+    end
+
+	if resp.status ~= 200 then
+		ngx.log(ngx.ERR, "===log server response", resp.status, resp.body);
 	end
 end
 
