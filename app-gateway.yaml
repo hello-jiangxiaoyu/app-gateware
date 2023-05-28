@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: gateway
 data:
-  CONSUL_ADDR: 10.43.88.57
+  CONSUL_ADDR: 192.168.119.143
 
 ---
 

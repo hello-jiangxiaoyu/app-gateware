@@ -4,11 +4,15 @@ services:
   gw_openresty:
     image: openresty/openresty
     container_name: openresty
-    ports:
-      - "80:80"
-      - "443:443"
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - /root/app-gateway:/usr/local/openresty/nginx/conf
+      - .:/usr/local/openresty/nginx/conf
       - /data/openresty:/usr/local/openresty/nginx/logs
     network_mode: host
+  consul1: 
+    image: consul
+    container_name: consul
+    command: ["consul","agent","-server","-bootstrap","-data-dir","/consul","-ui","-client","0.0.0.0"]
+    ports:
+      - 8500:8500
+
