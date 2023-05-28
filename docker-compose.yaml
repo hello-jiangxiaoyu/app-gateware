@@ -13,6 +13,21 @@ services:
     image: consul
     container_name: consul
     command: ["consul","agent","-server","-bootstrap","-data-dir","/consul","-ui","-client","0.0.0.0"]
+    ports: [8500:8500]
+    network_mode: host
+  clickhouse:
+    image: yandex/clickhouse-server
+    container_name: clickhouse
+    restart: always
+    network_mode: host
     ports:
-      - 8500:8500
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./config/docker_related_config.xml:/etc/clickhouse-server/config.d/docker_related_config.xml:rw
+      - ./config/config.xml:/etc/clickhouse-server/config.xml:rw
+      - ./config/users.xml:/etc/clickhouse-server/users.xml:rw
+      - /data/clickhouse/log:/var/log/clickhouse-server
+      - /data/clickhouse/lib:/var/lib/clickhouse:rw
 
