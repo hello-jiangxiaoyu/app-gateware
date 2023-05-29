@@ -1,7 +1,7 @@
 
 function get_service_ip(name)
     -- 根据service name获取k8s部署的service ip
-    retulocal http = require("socket.http")
+    local http = require("socket.http")
     local json = require("json")
 
     -- Construct the API URL for the service

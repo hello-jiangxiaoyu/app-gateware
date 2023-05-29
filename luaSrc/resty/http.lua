@@ -6,7 +6,6 @@ local ngx_req = ngx.req
 local ngx_req_socket = ngx_req.socket
 local ngx_req_get_headers = ngx_req.get_headers
 local ngx_req_get_method = ngx_req.get_method
-local str_gmatch = string.gmatch
 local str_lower = string.lower
 local str_upper = string.upper
 local str_find = string.find
@@ -56,8 +55,15 @@ local HOP_BY_HOP_HEADERS = {
 }
 
 
+local EXPECTING_BODY = {
+    POST  = true,
+    PUT   = true,
+    PATCH = true,
+}
+
+
 -- Reimplemented coroutine.wrap, returning "nil, err" if the coroutine cannot
--- be resumed. This protects user code from inifite loops when doing things like
+-- be resumed. This protects user code from infinite loops when doing things like
 -- repeat
 --   local chunk, err = res.body_reader()
 --   if chunk then -- <-- This could be a string msg in the core wrap function.
@@ -100,7 +106,7 @@ end
 
 
 local _M = {
-    _VERSION = '0.12',
+    _VERSION = '0.17.1',
 }
 _M._USER_AGENT = "lua-resty-http/" .. _M._VERSION .. " (Lua) ngx_lua/" .. ngx.config.ngx_lua_version
 
@@ -112,6 +118,7 @@ local HTTP = {
     [1.1] = " HTTP/1.1\r\n",
 }
 
+
 local DEFAULT_PARAMS = {
     method = "GET",
     path = "/",
@@ -119,12 +126,20 @@ local DEFAULT_PARAMS = {
 }
 
 
-function _M.new(self)
+local DEBUG = false
+
+
+function _M.new(_)
     local sock, err = ngx_socket_tcp()
     if not sock then
         return nil, err
     end
     return setmetatable({ sock = sock, keepalive = true }, mt)
+end
+
+
+function _M.debug(d)
+    DEBUG = (d == true)
 end
 
 
@@ -147,20 +162,26 @@ function _M.set_timeouts(self, connect_timeout, send_timeout, read_timeout)
     return sock:settimeouts(connect_timeout, send_timeout, read_timeout)
 end
 
-
-function _M.ssl_handshake(self, ...)
-    local sock = self.sock
-    if not sock then
-        return nil, "not initialized"
+do
+    local aio_connect = require "resty.http_connect"
+    -- Function signatures to support:
+    -- ok, err, ssl_session = httpc:connect(options_table)
+    -- ok, err = httpc:connect(host, port, options_table?)
+    -- ok, err = httpc:connect("unix:/path/to/unix.sock", options_table?)
+    function _M.connect(self, options, ...)
+        if type(options) == "table" then
+            -- all-in-one interface
+            return aio_connect(self, options)
+        else
+            -- backward compatible
+            return self:tcp_only_connect(options, ...)
+        end
     end
-
-    self.ssl = true
-
-    return sock:sslhandshake(...)
 end
 
+function _M.tcp_only_connect(self, ...)
+    ngx_log(ngx_DEBUG, "Use of deprecated `connect` method signature")
 
-function _M.connect(self, ...)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -175,6 +196,7 @@ function _M.connect(self, ...)
     end
 
     self.keepalive = true
+    self.ssl = false
 
     return sock:connect(...)
 end
@@ -230,10 +252,14 @@ local function _should_receive_body(method, code)
 end
 
 
-function _M.parse_uri(self, uri, query_in_path)
+function _M.parse_uri(_, uri, query_in_path)
     if query_in_path == nil then query_in_path = true end
 
-    local m, err = ngx_re_match(uri, [[^(?:(http[s]?):)?//([^:/\?]+)(?::(\d+))?([^\?]*)\??(.*)]], "jo")
+    local m, err = ngx_re_match(
+        uri,
+        [[^(?:(http[s]?):)?//((?:[^\[\]:/\?]+)|(?:\[.+\]))(?::(\d+))?([^\?]*)\??(.*)]],
+        "jo"
+    )
 
     if not m then
         if err then
@@ -245,6 +271,13 @@ function _M.parse_uri(self, uri, query_in_path)
         -- If the URI is schemaless (i.e. //example.com) try to use our current
         -- request scheme.
         if not m[1] then
+            -- Schema-less URIs can occur in client side code, implying "inherit
+            -- the schema from the current request". We support it for a fairly
+            -- specific case; if for example you are using the ESI parser in
+            -- ledge (https://github.com/ledgetech/ledge) to perform in-flight
+            -- sub requests on the edge based on instructions found in markup,
+            -- those URIs may also be schemaless with the intention that the
+            -- subrequest would inherit the schema just like JavaScript would.
             local scheme = ngx_var.scheme
             if scheme == "http" or scheme == "https" then
                 m[1] = scheme
@@ -274,14 +307,16 @@ function _M.parse_uri(self, uri, query_in_path)
 end
 
 
-local function _format_request(params)
+local function _format_request(self, params)
     local version = params.version
     local headers = params.headers or {}
 
     local query = params.query or ""
     if type(query) == "table" then
-        query = "?" .. ngx_encode_args(query)
-    elseif query ~= "" and str_sub(query, 1, 1) ~= "?" then
+        query = ngx_encode_args(query)
+    end
+
+    if query ~= "" and str_sub(query, 1, 1) ~= "?" then
         query = "?" .. query
     end
 
@@ -289,6 +324,7 @@ local function _format_request(params)
     local req = {
         str_upper(params.method),
         " ",
+        self.path_prefix or "",
         params.path,
         query,
         HTTP[version],
@@ -297,17 +333,20 @@ local function _format_request(params)
         true,
         true,
     }
-    local c = 6 -- req table index it's faster to do this inline vs table.insert
+    local c = 7 -- req table index it's faster to do this inline vs table.insert
 
     -- Append headers
     for key, values in pairs(headers) do
-        if type(values) ~= "table" then
-            values = {values}
-        end
-
         key = tostring(key)
-        for _, value in pairs(values) do
-            req[c] = key .. ": " .. tostring(value) .. "\r\n"
+
+        if type(values) == "table" then
+            for _, value in pairs(values) do
+                req[c] = key .. ": " .. tostring(value) .. "\r\n"
+                c = c + 1
+            end
+
+        else
+            req[c] = key .. ": " .. tostring(values) .. "\r\n"
             c = c + 1
         end
     end
@@ -325,7 +364,21 @@ local function _receive_status(sock)
         return nil, nil, nil, err
     end
 
-    return tonumber(str_sub(line, 10, 12)), tonumber(str_sub(line, 6, 8)), str_sub(line, 14)
+    local version = tonumber(str_sub(line, 6, 8))
+    if not version then
+        return nil, nil, nil,
+               "couldn't parse HTTP version from response status line: " .. line
+    end
+
+    local status = tonumber(str_sub(line, 10, 12))
+    if not status then
+        return nil, nil, nil,
+               "couldn't parse status code from response status line: " .. line
+    end
+
+    local reason = str_sub(line, 14)
+
+    return status, version, reason
 end
 
 
@@ -338,7 +391,9 @@ local function _receive_headers(sock)
             return nil, err
         end
 
-        local m, err = ngx_re_match(line, "([^:\\s]+):\\s*(.+)", "jo")
+        local m, err = ngx_re_match(line, "([^:\\s]+):\\s*(.*)", "jo")
+        if err then ngx_log(ngx_ERR, err) end
+
         if not m then
             break
         end
@@ -357,6 +412,23 @@ local function _receive_headers(sock)
 
     return headers, nil
 end
+
+
+local function transfer_encoding_is_chunked(headers)
+    local te = headers["Transfer-Encoding"]
+    if not te then
+        return false
+    end
+
+    -- Handle duplicate headers
+    -- This shouldn't happen but can in the real world
+    if type(te) ~= "string" then
+        te = tbl_concat(te, ",")
+    end
+
+    return str_find(str_lower(te), "chunked", 1, true) ~= nil
+end
+_M.transfer_encoding_is_chunked = transfer_encoding_is_chunked
 
 
 local function _chunked_body_reader(sock, default_chunk_size)
@@ -536,7 +608,7 @@ end
 
 
 local function _send_body(sock, body)
-    if type(body) == 'function' then
+    if type(body) == "function" then
         repeat
             local chunk, err, partial = body()
 
@@ -563,20 +635,25 @@ end
 
 
 local function _handle_continue(sock, body)
-    local status, version, reason, err = _receive_status(sock)
+    local status, version, reason, err = _receive_status(sock) --luacheck: no unused
     if not status then
-        return nil, nil, err
+        return nil, nil, nil, err
     end
 
     -- Only send body if we receive a 100 Continue
     if status == 100 then
-        local ok, err = sock:receive("*l") -- Read carriage return
-        if not ok then
-            return nil, nil, err
+        -- Read headers
+        local headers, err = _receive_headers(sock)
+        if not headers then
+            return nil, nil, nil, err
         end
-        _send_body(sock, body)
+
+        local ok, err = _send_body(sock, body)
+        if not ok then
+            return nil, nil, nil, err
+        end
     end
-    return status, version, err
+    return status, version, reason, err
 end
 
 
@@ -588,25 +665,61 @@ function _M.send_request(self, params)
     local body = params.body
     local headers = http_headers.new()
 
-    local params_headers = params.headers
-    if params_headers then
-        -- We assign one by one so that the metatable can handle case insensitivity
-        -- for us. You can blame the spec for this inefficiency.
-        for k,v in pairs(params_headers) do
-            headers[k] = v
+    -- We assign one-by-one so that the metatable can handle case insensitivity
+    -- for us. You can blame the spec for this inefficiency.
+    local params_headers = params.headers or {}
+    for k, v in pairs(params_headers) do
+        headers[k] = v
+    end
+
+    if not headers["Proxy-Authorization"] then
+        -- TODO: next major, change this to always override the provided
+        -- header. Can't do that yet because it would be breaking.
+        -- The connect method uses self.http_proxy_auth in the poolname so
+        -- that should be leading.
+        headers["Proxy-Authorization"] = self.http_proxy_auth
+    end
+
+    -- Ensure we have appropriate message length or encoding.
+    do
+        local is_chunked = transfer_encoding_is_chunked(headers)
+
+        if is_chunked then
+            -- If we have both Transfer-Encoding and Content-Length we MUST
+            -- drop the Content-Length, to help prevent request smuggling.
+            -- https://tools.ietf.org/html/rfc7230#section-3.3.3
+            headers["Content-Length"] = nil
+
+        elseif not headers["Content-Length"] then
+            -- A length was not given, try to calculate one.
+
+            local body_type = type(body)
+
+            if body_type == "function" then
+                return nil, "Request body is a function but a length or chunked encoding is not specified"
+
+            elseif body_type == "table" then
+                local length = 0
+                for _, v in ipairs(body) do
+                    length = length + #tostring(v)
+                end
+                headers["Content-Length"] = length
+
+            elseif body == nil and EXPECTING_BODY[str_upper(params.method)] then
+                headers["Content-Length"] = 0
+
+            elseif body ~= nil then
+                headers["Content-Length"] = #tostring(body)
+            end
         end
     end
 
-    -- Ensure minimal headers are set
-    if type(body) == 'string' and not headers["Content-Length"] then
-        headers["Content-Length"] = #body
-    end
     if not headers["Host"] then
         if (str_sub(self.host, 1, 5) == "unix:") then
             return nil, "Unable to generate a useful Host header for a unix domain socket. Please provide one."
         end
         -- If we have a port (i.e. not connected to a unix domain socket), and this
-        -- port is non-standard, append it to the Host heaer.
+        -- port is non-standard, append it to the Host header.
         if self.port then
             if self.ssl and self.port ~= 443 then
                 headers["Host"] = self.host .. ":" .. self.port
@@ -629,8 +742,8 @@ function _M.send_request(self, params)
     params.headers = headers
 
     -- Format and send request
-    local req = _format_request(params)
-    ngx_log(ngx_DEBUG, "\n", req)
+    local req = _format_request(self, params)
+    if DEBUG then ngx_log(ngx_DEBUG, "\n", req) end
     local bytes, err = sock:send(req)
 
     if not bytes then
@@ -658,11 +771,11 @@ function _M.read_response(self, params)
     -- If we expect: continue, we need to handle this, sending the body if allowed.
     -- If we don't get 100 back, then status is the actual status.
     if params.headers["Expect"] == "100-continue" then
-        local _status, _version, _err = _handle_continue(sock, params.body)
+        local _status, _version, _reason, _err = _handle_continue(sock, params.body)
         if not _status then
             return nil, _err
         elseif _status ~= 100 then
-            status, version, err = _status, _version, _err
+            status, version, reason, err = _status, _version, _reason, _err -- luacheck: no unused
         end
     end
 
@@ -683,8 +796,8 @@ function _M.read_response(self, params)
     -- keepalive is true by default. Determine if this is correct or not.
     local ok, connection = pcall(str_lower, res_headers["Connection"])
     if ok then
-        if  (version == 1.1 and connection == "close") or
-            (version == 1.0 and connection ~= "keep-alive") then
+        if (version == 1.1 and str_find(connection, "close", 1, true)) or
+           (version == 1.0 and not str_find(connection, "keep-alive", 1, true)) then
             self.keepalive = false
         end
     else
@@ -700,17 +813,18 @@ function _M.read_response(self, params)
 
     -- Receive the body_reader
     if _should_receive_body(params.method, status) then
-        local ok, encoding = pcall(str_lower, res_headers["Transfer-Encoding"])
-        if ok and version == 1.1 and encoding == "chunked" then
-            body_reader, err = _chunked_body_reader(sock)
-            has_body = true
-        else
+        has_body = true
 
+        if version == 1.1 and transfer_encoding_is_chunked(res_headers) then
+            body_reader, err = _chunked_body_reader(sock)
+        else
             local ok, length = pcall(tonumber, res_headers["Content-Length"])
-            if ok then
-                body_reader, err = _body_reader(sock, length)
-                has_body = true
+            if not ok then
+                -- No content-length header, read until connection is closed by server
+                length = nil
             end
+
+            body_reader, err = _body_reader(sock, length)
         end
     end
 
@@ -736,7 +850,7 @@ end
 
 
 function _M.request(self, params)
-    params = tbl_copy(params)  -- Take by value
+    params = tbl_copy(params) -- Take by value
     local res, err = self:send_request(params)
     if not res then
         return res, err
@@ -747,7 +861,7 @@ end
 
 
 function _M.request_pipeline(self, requests)
-    requests = tbl_copy(requests)  -- Take by value
+    requests = tbl_copy(requests) -- Take by value
 
     for _, params in ipairs(requests) do
         if params.headers and params.headers["Expect"] == "100-continue" then
@@ -789,100 +903,72 @@ function _M.request_pipeline(self, requests)
     return responses
 end
 
+
 function _M.request_uri(self, uri, params)
-    params = tbl_copy(params or {})  -- Take by value
-
-    local parsed_uri, err = self:parse_uri(uri, false)
-    if not parsed_uri then
-        return nil, err
+    params = tbl_copy(params or {}) -- Take by value
+    if self.proxy_opts then
+        params.proxy_opts = tbl_copy(self.proxy_opts or {})
     end
 
-    local scheme, host, port, path, query = unpack(parsed_uri)
-    if not params.path then params.path = path end
-    if not params.query then params.query = query end
-
-    -- See if we should use a proxy to make this request
-    local proxy_uri = self:get_proxy_uri(scheme, host)
-
-    -- Make the connection either through the proxy or directly
-    -- to the remote host
-    local c, err
-
-    if proxy_uri then
-        c, err = self:connect_proxy(proxy_uri, scheme, host, port)
-    else
-        c, err = self:connect(host, port)
-    end
-
-    if not c then
-        return nil, err
-    end
-
-    if proxy_uri then
-        if scheme == "http" then
-            -- When a proxy is used, the target URI must be in absolute-form
-            -- (RFC 7230, Section 5.3.2.). That is, it must be an absolute URI
-            -- to the remote resource with the scheme, host and an optional port
-            -- in place.
-            --
-            -- Since _format_request() constructs the request line by concatenating
-            -- params.path and params.query together, we need to modify the path
-            -- to also include the scheme, host and port so that the final form
-            -- in conformant to RFC 7230.
-            if port == 80 then
-                params.path = scheme .. "://" .. host .. path
-            else
-                params.path = scheme .. "://" .. host .. ":" .. port .. path
-            end
-        end
-
-        if scheme == "https" then
-            -- don't keep this connection alive as the next request could target
-            -- any host and re-using the proxy tunnel for that is not possible
-            self.keepalive = false
-        end
-
-        -- self:connect_uri() set the host and port to point to the proxy server. As
-        -- the connection to the proxy has been established, set the host and port
-        -- to point to the actual remote endpoint at the other end of the tunnel to
-        -- ensure the correct Host header added to the requests.
-        self.host = host
-        self.port = port
-    end
-
-    if scheme == "https" then
-        local verify = true
-        if params.ssl_verify == false then
-            verify = false
-        end
-        local ok, err = self:ssl_handshake(nil, host, verify)
-        if not ok then
+    do
+        local parsed_uri, err = self:parse_uri(uri, false)
+        if not parsed_uri then
             return nil, err
         end
+
+        local path, query
+        params.scheme, params.host, params.port, path, query = unpack(parsed_uri)
+        params.path = params.path or path
+        params.query = params.query or query
+        params.ssl_server_name = params.ssl_server_name or params.host
+    end
+
+    do
+        local proxy_auth = (params.headers or {})["Proxy-Authorization"]
+        if proxy_auth and params.proxy_opts then
+            params.proxy_opts.https_proxy_authorization = proxy_auth
+            params.proxy_opts.http_proxy_authorization = proxy_auth
+        end
+    end
+
+    local ok, err = self:connect(params)
+    if not ok then
+        return nil, err
     end
 
     local res, err = self:request(params)
     if not res then
+        self:close()
         return nil, err
     end
 
     local body, err = res:read_body()
     if not body then
+        self:close()
         return nil, err
     end
 
     res.body = body
 
-    local ok, err = self:set_keepalive()
-    if not ok then
-        ngx_log(ngx_ERR, err)
+    if params.keepalive == false then
+        local ok, err = self:close()
+        if not ok then
+            ngx_log(ngx_ERR, err)
+        end
+
+    else
+        local ok, err = self:set_keepalive(params.keepalive_timeout, params.keepalive_pool)
+        if not ok then
+            ngx_log(ngx_ERR, err)
+        end
+
     end
 
     return res, nil
 end
 
 
-function _M.get_client_body_reader(self, chunksize, sock)
+function _M.get_client_body_reader(_, chunksize, sock)
     chunksize = chunksize or 65536
 
     if not sock then
@@ -904,64 +990,23 @@ function _M.get_client_body_reader(self, chunksize, sock)
 
     local headers = ngx_req_get_headers()
     local length = headers.content_length
-    local encoding = headers.transfer_encoding
     if length then
         return _body_reader(sock, tonumber(length), chunksize)
-    elseif encoding and str_lower(encoding) == 'chunked' then
+    elseif transfer_encoding_is_chunked(headers) then
         -- Not yet supported by ngx_lua but should just work...
         return _chunked_body_reader(sock, chunksize)
     else
-       return nil
+        return nil
     end
 end
 
-
-function _M.proxy_request(self, chunksize)
-    return self:request{
-        method = ngx_req_get_method(),
-        path = ngx_re_gsub(ngx_var.uri, "\\s", "%20", "jo") .. ngx_var.is_args .. (ngx_var.query_string or ""),
-        body = self:get_client_body_reader(chunksize),
-        headers = ngx_req_get_headers(),
-    }
-end
-
-
-function _M.proxy_response(self, response, chunksize)
-    if not response then
-        ngx_log(ngx_ERR, "no response provided")
-        return
-    end
-
-    ngx.status = response.status
-
-    -- Filter out hop-by-hop headeres
-    for k,v in pairs(response.headers) do
-        if not HOP_BY_HOP_HEADERS[str_lower(k)] then
-            ngx_header[k] = v
-        end
-    end
-
-    local reader = response.body_reader
-    repeat
-        local chunk, err = reader(chunksize)
-        if err then
-            ngx_log(ngx_ERR, err)
-            break
-        end
-
-        if chunk then
-            local res, err = ngx_print(chunk)
-            if not res then
-                ngx_log(ngx_ERR, err)
-                break
-            end
-        end
-    until not chunk
-end
 
 function _M.set_proxy_options(self, opts)
-    self.proxy_opts = tbl_copy(opts)  -- Take by value
+    -- TODO: parse and cache these options, instead of parsing them
+    -- on each request over and over again (lru-cache on module level)
+    self.proxy_opts = tbl_copy(opts) -- Take by value
 end
+
 
 function _M.get_proxy_uri(self, scheme, host)
     if not self.proxy_opts then
@@ -979,13 +1024,13 @@ function _M.get_proxy_uri(self, scheme, host)
         local no_proxy_set = {}
         -- wget allows domains in no_proxy list to be prefixed by "."
         -- e.g. no_proxy=.mit.edu
-        for host_suffix in ngx_re_gmatch(self.proxy_opts.no_proxy, "\\.?([^,]+)") do
+        for host_suffix in ngx_re_gmatch(self.proxy_opts.no_proxy, "\\.?([^,]+)", "jo") do
             no_proxy_set[host_suffix[1]] = true
         end
 
-                -- From curl docs:
-                -- matched as either a domain which contains the hostname, or the
-                -- hostname itself. For example local.com would match local.com,
+        -- From curl docs:
+        -- matched as either a domain which contains the hostname, or the
+        -- hostname itself. For example local.com would match local.com,
         -- local.com:80, and www.local.com, but not www.notlocal.com.
         --
         -- Therefore, we keep stripping subdomains from the host, compare
@@ -998,8 +1043,8 @@ function _M.get_proxy_uri(self, scheme, host)
 
             -- Strip the next level from the domain and check if that one
             -- is on the list
-            host = ngx_re_sub(host, "^[^.]+\\.", "")
-        until not ngx_re_find(host, "\\.")
+            host = ngx_re_sub(host, "^[^.]+\\.", "", "jo")
+        until not ngx_re_find(host, "\\.", "jo")
     end
 
     if scheme == "http" and self.proxy_opts.http_proxy then
@@ -1014,7 +1059,28 @@ function _M.get_proxy_uri(self, scheme, host)
 end
 
 
-function _M.connect_proxy(self, proxy_uri, scheme, host, port)
+-- ----------------------------------------------------------------------------
+-- The following functions are considered DEPRECATED and may be REMOVED in
+-- future releases. Please see the notes in `README.md`.
+-- ----------------------------------------------------------------------------
+
+function _M.ssl_handshake(self, ...)
+    ngx_log(ngx_DEBUG, "Use of deprecated function `ssl_handshake`")
+
+    local sock = self.sock
+    if not sock then
+        return nil, "not initialized"
+    end
+
+    self.ssl = true
+
+    return sock:sslhandshake(...)
+end
+
+
+function _M.connect_proxy(self, proxy_uri, scheme, host, port, proxy_authorization)
+    ngx_log(ngx_DEBUG, "Use of deprecated function `connect_proxy`")
+
     -- Parse the provided proxy URI
     local parsed_proxy_uri, err = self:parse_uri(proxy_uri, false)
     if not parsed_proxy_uri then
@@ -1030,7 +1096,7 @@ function _M.connect_proxy(self, proxy_uri, scheme, host, port)
 
     -- Make the connection to the given proxy
     local proxy_host, proxy_port = parsed_proxy_uri[2], parsed_proxy_uri[3]
-    local c, err = self:connect(proxy_host, proxy_port)
+    local c, err = self:tcp_only_connect(proxy_host, proxy_port)
     if not c then
         return nil, err
     end
@@ -1045,7 +1111,8 @@ function _M.connect_proxy(self, proxy_uri, scheme, host, port)
             method = "CONNECT",
             path = destination,
             headers = {
-                ["Host"] = destination
+                ["Host"] = destination,
+                ["Proxy-Authorization"] = proxy_authorization,
             }
         })
 
@@ -1060,5 +1127,59 @@ function _M.connect_proxy(self, proxy_uri, scheme, host, port)
 
     return c, nil
 end
+
+
+function _M.proxy_request(self, chunksize)
+    ngx_log(ngx_DEBUG, "Use of deprecated function `proxy_request`")
+
+    return self:request({
+        method = ngx_req_get_method(),
+        path = ngx_re_gsub(ngx_var.uri, "\\s", "%20", "jo") .. ngx_var.is_args .. (ngx_var.query_string or ""),
+        body = self:get_client_body_reader(chunksize),
+        headers = ngx_req_get_headers(),
+    })
+end
+
+
+function _M.proxy_response(_, response, chunksize)
+    ngx_log(ngx_DEBUG, "Use of deprecated function `proxy_response`")
+
+    if not response then
+        ngx_log(ngx_ERR, "no response provided")
+        return
+    end
+
+    ngx.status = response.status
+
+    -- Filter out hop-by-hop headeres
+    for k, v in pairs(response.headers) do
+        if not HOP_BY_HOP_HEADERS[str_lower(k)] then
+            ngx_header[k] = v
+        end
+    end
+
+    local reader = response.body_reader
+
+    repeat
+        local chunk, ok, read_err, print_err
+
+        chunk, read_err = reader(chunksize)
+        if read_err then
+            ngx_log(ngx_ERR, read_err)
+        end
+
+        if chunk then
+            ok, print_err = ngx_print(chunk)
+            if not ok then
+                ngx_log(ngx_ERR, print_err)
+            end
+        end
+
+        if read_err or print_err then
+            break
+        end
+    until not chunk
+end
+
 
 return _M

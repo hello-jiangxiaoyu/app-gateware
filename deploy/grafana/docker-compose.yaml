@@ -1,0 +1,44 @@
+version: '3'
+
+networks:
+  monitor:
+    driver: bridge
+
+services:
+  node-exporter: # dashboard: 8919
+    image: prom/node-exporter:latest
+    container_name: "node"
+    networks: [monitor]
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+  cadvisor:
+    image: google/cadvisor:latest
+    container_name: cadvisor
+    hostname: cadvisor
+    # ports: ["8080:8080"]
+    networks: [monitor]
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: "prometheus"
+    # ports: [9090:9090]
+    networks: [monitor]
+    volumes: [./prometheus.yaml:/etc/prometheus/prometheus.yml]
+  grafana:
+    image: grafana/grafana
+    container_name: "grafana"
+    ports: ["3000:3000"]
+    networks: [monitor]
+    volumes: [/data/grafana:/var/lib/grafana, /etc/localtime:/etc/localtime:ro]
