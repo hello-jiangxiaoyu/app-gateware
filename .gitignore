@@ -6,4 +6,4 @@ crt
 *.csr
 *.pem
 *.key
-
+*.so
