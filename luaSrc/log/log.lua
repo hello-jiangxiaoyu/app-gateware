@@ -6,6 +6,7 @@ local ngx       = require("ngx")
 local clickhouse = require("log.clickhouse")
 local ngx_var   = ngx.var
 
+
 -- 接口访问日志
 local function getAccessLogTable()
     local accessLog = {}

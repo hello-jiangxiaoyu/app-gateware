@@ -1,9 +1,11 @@
 
+local require       = require
+local ngx           = require("ngx")
+local limit_count   = require "resty.limit.count"
+local newLimit      = limit_count.new
+
 local _M = {}
-local require = require
-local ngx = require("ngx")
-local limit_count = require "resty.limit.count"
-local newLimit = limit_count.new
+
 
 function _M.limit()
     local lim, err = newLimit("s_ip_limit", 200, 20)

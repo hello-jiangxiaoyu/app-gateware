@@ -1,0 +1,8 @@
+{
+    "store":{
+        "type": "file",
+        "host": "http://consul:8500",
+        "user": "admin",
+        "password": "admin"
+    }
+}
