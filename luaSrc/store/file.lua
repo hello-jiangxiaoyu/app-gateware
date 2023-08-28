@@ -1,8 +1,10 @@
 local ngx           = ngx
 local type          = type
+local pairs         = pairs
 local require       = require
 local file          = require("utils/file")
 local json_decode   = require("cjson.safe").decode
+local json_encode   = require("cjson.safe").encode
 
 local _M = {}
 
@@ -46,11 +48,23 @@ end
 -- 获取host列表
 function _M.GetHostList(domain, key)
     local domainConfig = getDomainConfiguration(domain)
-    if type(domainConfig) ~= "table" or type(domainConfig.upstream) ~= "table" or type(domainConfig.upstream[key]) ~= "table" then
+    if type(domainConfig) ~= "table" or type(domainConfig.upstream) ~= "table" then
         ngx.log(ngx.WARN, "upstream list is empty.")
         return {}
     end
-    return domainConfig.upstream[key]
+
+    for k, v in pairs(domainConfig.upstream) do
+        if type(v) ~= "table" or type(v.rule) ~= "string" or type(v.hosts) ~= "table" then
+            ngx.log(ngx.WARN, "invalidate domain upstream conf.")
+            return {}
+        end
+        local m = ngx.re.match(key, v.rule, "jo")
+        if m then
+            return v.hosts  -- 匹配成功
+        end
+    end
+
+    return {}
 end
 
 

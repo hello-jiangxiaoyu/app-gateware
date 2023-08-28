@@ -32,9 +32,9 @@ end
 
 -- 设置反向代理ip
 function _M.LoadBalance()
-    local host = getHostList(ngx.var.http_host, "quick_auth")
+    local host = getHostList(ngx.var.http_host, ngx_var.uri)
     local backend = pickHost(ngx.var.remote_addr, host)
-    ngx.log(ngx.INFO, "backend: ", backend)
+    ngx.log(ngx.DEBUG, "hosts: ", json_encode(host))
     local ok, err = balancer.set_current_peer(backend, 80)
     if not ok then
         ngx.log(ngx.ERR, "failed to set the current peer: ", err)
