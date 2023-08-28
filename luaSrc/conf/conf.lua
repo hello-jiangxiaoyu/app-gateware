@@ -5,7 +5,7 @@ local io_open       = io.open
 local env           = require("common/env")
 local json          = require "cjson.safe"
 local ngx           = require("ngx")
-local sharedConfig  = ngx.shared.config
+local shared_config = ngx.shared.config
 local json_decode   = json.decode
 local json_encode   = json.encode
 
@@ -14,7 +14,7 @@ local json_encode   = json.encode
 
 -- 获取配置
 local function getConfByName(key)
-    local conf = json.decode(sharedConfig:get(key))
+    local conf = json.decode(shared_config:get(key))
     if conf then
         return conf  -- 命中缓存
     end
@@ -32,7 +32,7 @@ local function getConfByName(key)
         return nil
     end
 
-    sharedConfig:safe_set(key, content)  -- 存入共享内存
+    shared_config:safe_set(key, content)  -- 存入共享内存
     return conf
 end
 
@@ -61,7 +61,7 @@ function _M.UpdateConf(key, conf)
 
     local content = json_encode(conf)
     file:write(content)
-    sharedConfig:safe_set(key, content)
+    shared_config:safe_set(key, content)
     file:close()
 
     return nil
