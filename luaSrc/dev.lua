@@ -10,7 +10,6 @@ local json_decode   = require("cjson.safe").decode
 local json_encode   = require("cjson.safe").encode
 
 local _M = {}
-local ConstTime = 1000*1000*1000
 
 
 function _M:exec()

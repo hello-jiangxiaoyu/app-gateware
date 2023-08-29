@@ -2,6 +2,8 @@ local io    = io
 local ngx   = ngx
 local type  = type
 local pcall = pcall
+local io_read = io.read
+local io_close = io.close
 local _M    = {}
 
 
@@ -19,13 +21,13 @@ function _M.read_file(path)
 
     local data = ""
     repeat
-        local line = io.read()
+        local line = io_read()
         if nil == line then
             break
         end
         data = data .. "\n" .. line            -- 逐行读取内容，文件结束时返回nil
     until (false)
-    io.close(file)
+    io_close(file)
     return data
 end
 

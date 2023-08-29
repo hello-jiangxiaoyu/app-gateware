@@ -7,6 +7,7 @@ local newLimit      = limit_count.new
 local _M = {}
 
 
+-- 自定义ip限流器
 function _M.limit()
     local lim, err = newLimit("s_ip_limit", 200, 20)
     if not lim then
@@ -30,5 +31,6 @@ function _M.limit()
 
     ngx.header["X-RateLimit-Remaining"] = err
 end
+
 
 return _M
