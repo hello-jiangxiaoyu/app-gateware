@@ -3,6 +3,7 @@ local require   = require
 local ngx       = require("ngx")
 local http      = require("resty.http")
 
+
 function _M.Handler()
     local ok, err = ngx.timer.at(0, _M.Handler2);
     if not ok then
@@ -11,6 +12,7 @@ function _M.Handler()
 	end
     ngx.log(ngx.INFO, "### timer created")
 end
+
 
 function _M.Handler2()
     local httpc = http.new();
@@ -28,5 +30,6 @@ function _M.Handler2()
     end
     ngx.log(ngx.WARN, "@@@### log ok")
 end
+
 
 return _M
