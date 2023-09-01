@@ -25,14 +25,14 @@ end
 
 
 function _M.LogSendTimer(_, istSql)
-    local host = "192.168.119.143:8123"
+    local host = "172.27.102.84:8123"
     local urlDecode = {
         host = host,
         url = "http://" .. host
     }
     local conf = {
         user = "default",
-        passwd = "",
+        passwd = "default",
         database = "log",
         logTable = "test_log"
     }
@@ -63,6 +63,7 @@ end
 
 function _M.Handler(logTable)
     local istSql = getInsertSql("test_log", logTable)
+    ngx.log(ngx.INFO, "===insert sql: ", istSql)
     local ok, err = ngx.timer.at(0, _M.LogSendTimer, istSql);
     if not ok then
 		ngx.log(ngx.ERR, "failed to create timer: ", err)
