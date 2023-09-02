@@ -25,7 +25,7 @@ end
 
 
 function _M.LogSendTimer(_, istSql)
-    local host = "172.27.102.84:8123"
+    local host = "172.31.149.120:8123"
     local urlDecode = {
         host = host,
         url = "http://" .. host

@@ -6,3 +6,6 @@
 *.pem
 *.key
 *.so
+
+__pycache__
+test/*.html
