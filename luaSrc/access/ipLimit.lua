@@ -1,15 +1,15 @@
 
 local require       = require
 local ngx           = require("ngx")
-local limit_count   = require "resty.limit.count"
+local limit_count   = require "resty.limit.count"  -- 基于请求数限流
 local newLimit      = limit_count.new
 
 local _M = {}
 
 
--- 自定义ip限流器
-function _M.limit()
-    local lim, err = newLimit("s_ip_limit", 200, 20)
+-- 基于请求数对ip限流
+function _M.limitCount()
+    local lim, err = newLimit("ip_limit_count", 200, 20)
     if not lim then
         ngx.log(ngx.ERR, "new limit err: ", err)
         return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
