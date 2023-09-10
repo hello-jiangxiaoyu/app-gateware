@@ -1,12 +1,15 @@
 
-local _M = {}
-local require = require
-local ngx = require("ngx")
-local limit_count = require "resty.limit.count"
-local newLimit = limit_count.new
+local require       = require
+local ngx           = require("ngx")
+local limit_count   = require "resty.limit.count"  -- 基于请求数限流
+local newLimit      = limit_count.new
 
-function _M.limit()
-    local lim, err = newLimit("s_ip_limit", 200, 20)
+local _M = {}
+
+
+-- 基于请求数对ip限流
+function _M.limitCount()
+    local lim, err = newLimit("ip_limit_count", 200, 20)
     if not lim then
         ngx.log(ngx.ERR, "new limit err: ", err)
         return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
@@ -28,5 +31,6 @@ function _M.limit()
 
     ngx.header["X-RateLimit-Remaining"] = err
 end
+
 
 return _M

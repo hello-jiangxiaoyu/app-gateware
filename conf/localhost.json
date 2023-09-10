@@ -1,0 +1,12 @@
+{
+    "upstream": {
+        "quick_auth": {
+            "rule": "^/api/quick",
+            "hosts": ["127.0.0.1", "192.168.1.101"]
+        },
+        "upstream_test": {
+            "rule": "^/upstream",
+            "hosts": ["127.0.0.1", "192.168.1.101"]
+        }
+    }
+}

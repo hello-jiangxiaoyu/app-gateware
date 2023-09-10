@@ -29,3 +29,6 @@ log to clickhouse
 # log collect
 $ kubectl create -f https://raw.githubusercontent.com/fluent/fluent-bit-kubernetes-logging/master/fluent-bit-openshift-security-context-constraints.yaml
 
+
+# docker run
+docker run -p 8000:8000 -p 80:80 -p 443:443 -v /etc/localtime:/etc/localtime -v .:/usr/local/openresty/nginx/conf -d openresty/openresty
